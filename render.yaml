@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: analisis-operativa-servicio-al-cliente
+    env: python
+    plan: free
+    region: oregon
+    buildCommand: "uv sync --frozen"
+    startCommand: "uv run flask --app wsgi run --host 0.0.0.0 --port $PORT"
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12"
+      - key: SECRET_KEY
+        generateValue: true
+      - key: IA_API_KEY
+        sync: false

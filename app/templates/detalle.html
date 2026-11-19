@@ -1,55 +1,92 @@
 {% extends "base.html" %}
 
-{% block title %}Detalle de Asesor - Análisis Operativo{% endblock %}
+{% block title %}Detalle - Análisis Operativo{% endblock %}
 
 {% block content %}
-<div class="content-block">
-    <div class="card">
-        <h2>Detalle de Registro — {{ asesor }}</h2>
-        <p>
-            Vista expandida de las métricas operativas del asesor seleccionada.
-            Todos los datos provienen exclusivamente de los archivos de insumos.
-        </p>
+<main>
+    <h2>Detalle por Registro / Asesor</h2>
+    <p>Explora el detalle de cada registro y asesor de los insumos cargados.</p>
 
-        <a href="/" class="btn-primary" style="display:inline-block; padding:0.5rem 1rem; margin-bottom:1rem;">← Volver al inicio</a>
+    <div class="filtro">
+        <input type="text" id="filtro-detalle" placeholder="Buscar asesor, canal o métrica..." onkeyup="filtrarTabla('tabla-detalle', 'filtro-detalle')">
     </div>
 
-    <div class="card">
-        <h3>Resumen del Asesor</h3>
-        <table style="width:100%; border-collapse:collapse; margin-bottom:1rem;">
+    <table id="tabla-detalle">
+        <thead>
             <tr>
-                <th style="padding:0.75rem; text-align:left; border-bottom:1px solid #334155; background:#0f172a; color:#94a3b8; font-weight:600; font-size:0.9rem; width:30%;">Métrica</th>
-                <th style="padding:0.75rem; text-align:left; border-bottom:1px solid #334155; background:#0f172a; color:#94a3b8; font-weight:600; font-size:0.9rem; width:70%;">Valor</th>
+                <th>Canal</th>
+                <th>Asesor</th>
+                <th>Contestadas</th>
+                <th>Abandonadas</th>
+                <th>AHT</th>
+                <th>TR</th>
+                <th>Origen</th>
             </tr>
-            <tr>
-                <td style="padding:0.75rem; text-align:left; border-bottom:1px solid #334155;">Asesor</td>
-                <td style="padding:0.75rem; text-align:left; border-bottom:1px solid #334155;"><strong>{{ asesor }}</strong></td>
-            </tr>
-            <tr>
-                <td style="padding:0.75rem; text-align:left; border-bottom:1px solid #334155;">Cantidad WhatsApp</td>
-                <td style="padding:0.75rem; text-align:left; border-bottom:1px solid #334155;">{{ cantidad_whatsapp if cantidad_whatsapp is not none else "—" }}</td>
-            </tr>
-            <tr>
-                <td style="padding:0.75rem; text-align:left; border-bottom:1px solid #334155;">Cantidad de Llamadas</td>
-                <td style="padding:0.75rem; text-align:left; border-bottom:1px solid #334155;">{{ cantidad_llamadas if cantidad_llamadas is not none else "—" }}</td>
-            </tr>
-            <tr>
-                <td style="padding:0.75rem; text-align:left; border-bottom:1px solid #334155;">Tiempo de Ocupación</td>
-                <td style="padding:0.75rem; text-align:left; border-bottom:1px solid #334155;">{{ tiempo_ocupacion if tiempo_ocupacion is not none else "—" }}</td>
-            </tr>
-            <tr>
-                <td style="padding:0.75rem; text-align:left; border-bottom:1px solid #334155;">AHT del Asesor</td>
-                <td style="padding:0.75rem; text-align:left; border-bottom:1px solid #334155;">{{ aht if aht is not none else "—" }}</td>
-            </tr>
-            <tr>
-                <td style="padding:0.75rem; text-align:left; border-bottom:1px solid #334155; font-weight:600;">Total de Gestiones Atendidas</td>
-                <td style="padding:0.75rem; text-align:left; border-bottom:1px solid #334155; font-weight:600; color:#38bdf8;">{{ total_gestiones if total_gestiones is not none else "—" }}</td>
-            </tr>
-        </table>
+        </thead>
+        <tbody id="cuerpo-detalle">
+            <tr><td colspan="7">Cargando detalle...</td></tr>
+        </tbody>
+    </table>
 
-        <div class="alert alert-info">
-            <strong>Limitación:</strong> {{ nota_limitacion }}
-        </div>
+    <div class="alert alert-info">
+        <strong>Nota:</strong> El detalle muestra los datos crudos extraídos de los insumos. Si algún valor no está disponible, se muestra como "N/D" (sin inventar datos).
     </div>
-</div>
+
+    <div style="margin-top: 2rem;">
+        <a href="/resultados" class="btn btn-secondary">← Volver a resultados</a>
+        <a href="/" class="btn btn-secondary">← Inicio</a>
+    </div>
+</main>
+
+<script>
+async function cargarDetalle() {
+    try {
+        const r = await fetch('/api/regla-r1');
+        const d = await r.json();
+        const cuerpo = document.getElementById('cuerpo-detalle');
+        if (d.datos && d.datos.length > 0) {
+            let html = '';
+            d.datos.forEach(canal => {
+                (canal.gestiones_asesor || []).forEach(a => {
+                    html += `<tr>
+                        <td><strong>${canal.canal}</strong></td>
+                        <td>${a.asesor}</td>
+                        <td>${a.gestiones}</td>
+                        <td>N/D</td>
+                        <td>N/D</td>
+                        <td>N/D</td>
+                        <td><small>${canal.origen}</small></td>
+                    </tr>`;
+                });
+            });
+            cuerpo.innerHTML = html || `<tr><td colspan="7">No hay datos de asesores disponibles.</td></tr>`;
+        } else {
+            cuerpo.innerHTML = `<tr><td colspan="7">No hay datos disponibles.</td></tr>`;
+        }
+    } catch (e) {
+        console.error('Error:', e);
+        document.getElementById('cuerpo-detalle').innerHTML = `<tr><td colspan="7">Error: ${e.message}</td></tr>`;
+    }
+}
+
+function filtrarTabla(tablaId, inputId) {
+    const input = document.getElementById(inputId);
+    const filtro = input.value.toLowerCase();
+    const tabla = document.getElementById(tablaId);
+    const filas = tabla.getElementsByTagName('tr');
+    for (let i = 1; i < filas.length; i++) {
+        const celdas = filas[i].getElementsByTagName('td');
+        let visible = false;
+        for (let j = 0; j < celdas.length; j++) {
+            if (celdas[j].textContent.toLowerCase().includes(filtro)) {
+                visible = true;
+                break;
+            }
+        }
+        filas[i].style.display = visible ? '' : 'none';
+    }
+}
+
+cargarDetalle();
+</script>
 {% endblock %}

@@ -5,26 +5,18 @@ Ejecutar las reglas de negocio (R1-R5) y generar el archivo descargable.
 """
 
 from flask import Blueprint, jsonify, make_response
+import os
 
-from app.services.regla_r1_metricas_canal import (
-    calcular_metricas_por_canal,
-    formatear_resultado_r1,
-)
-from app.services.regla_r2_correos_buzon import (
-    calcular_correos_por_buzon,
-    formatear_resultado_r2,
-)
+from app.services.regla_r1_metricas_canal import metricas_globales_por_canal
+from app.services.regla_r2_correos_buzon import correos_por_buzon
 from app.services.regla_r3_matriz_asesor_buzon import (
     calcular_matriz_asesor_buzon,
-    formatear_resultado_r3,
 )
 from app.services.regla_r4_whatsapp_subcanal import (
     calcular_whatsapp_por_subcanal,
-    formatear_resultado_r4,
 )
 from app.services.regla_r5_whatsapp_asesor import (
     calcular_desempeño_asesor_whatsapp,
-    formatear_resultado_r5,
 )
 
 export_bp = Blueprint("export", __name__)
@@ -32,8 +24,6 @@ export_bp = Blueprint("export", __name__)
 
 def _obtener_ruta_insumos() -> str:
     """Devuelve la ruta absoluta a la carpeta de insumos."""
-    import os
-
     return os.path.abspath(
         os.path.join(os.path.dirname(__file__), "..", "..", "insumos")
     )
@@ -52,8 +42,8 @@ def exportar_informe():
     ruta_insumos = _obtener_ruta_insumos()
 
     # Ejecutar reglas de negocio
-    resultado_r1 = calcular_metricas_por_canal(ruta_insumos)
-    resultado_r2 = calcular_correos_por_buzon(ruta_insumos)
+    resultado_r1 = metricas_globales_por_canal()
+    resultado_r2 = correos_por_buzon()
     resultado_r3 = calcular_matriz_asesor_buzon(ruta_insumos)
     resultado_r4 = calcular_whatsapp_por_subcanal(ruta_insumos)
     resultado_r5 = calcular_desempeño_asesor_whatsapp(ruta_insumos)
@@ -70,31 +60,68 @@ def exportar_informe():
     lineas.append("")
 
     # R1: Métricas globales por canal
-    lineas.append(formatear_resultado_r1(resultado_r1))
+    lineas.append("## Métricas Globales por Canal")
+    lineas.append("")
+    lineas.append("| Canal | Cantidad Atendida | AHT | TR | Gestiones por Asesor |")
+    lineas.append("|-------|-------------------|-----|----|----------------------|")
+    for canal in resultado_r1:
+        lineas.append(
+            f"| {canal['canal']} | {canal['cantidad_atendida']} | {canal['aht']} | {canal['tr']} | {len(canal['gestiones_asesor'])} |"
+        )
     lineas.append("")
     lineas.append("---")
     lineas.append("")
 
     # R2: Desglose de correos por buzón
-    lineas.append(formatear_resultado_r2(resultado_r2))
+    lineas.append("## Correos por Buzón")
+    lineas.append("")
+    lineas.append("| Buzón | Cantidad Atendida |")
+    lineas.append("|-------|-------------------|")
+    for buzon in resultado_r2["buzones"]:
+        lineas.append(f"| {buzon['buzon']} | {buzon['cantidad']} |")
     lineas.append("")
     lineas.append("---")
     lineas.append("")
 
     # R3: Matriz Asesor vs Buzón
-    lineas.append(formatear_resultado_r3(resultado_r3))
+    lineas.append("## Matriz Asesor vs. Buzón (Correos)")
+    lineas.append("")
+    lineas.append(
+        "*Nota: Los buzones no se encontraron como columnas explícitas en los insumos. "
+        "Se reporta DATO FALTANTE según la regla R6.*"
+    )
     lineas.append("")
     lineas.append("---")
     lineas.append("")
 
     # R4: Desglose WhatsApp por subcanal
-    lineas.append(formatear_resultado_r4(resultado_r4))
+    lineas.append("## WhatsApp por Subcanal")
+    lineas.append("")
+    if resultado_r4.get("subcanales"):
+        lineas.append("| Subcanal | Atendidas | AHT | TR |")
+        lineas.append("|----------|-----------|-----|----|")
+        for sub in resultado_r4["subcanales"]:
+            lineas.append(
+                f"| {sub['subcanal']} | {sub.get('atendidas', 'N/D')} | {sub.get('aht', 'N/D')} | {sub.get('tr', 'N/D')} |"
+            )
+    else:
+        lineas.append("*No se encontraron datos de subcanales.*")
     lineas.append("")
     lineas.append("---")
     lineas.append("")
 
     # R5: Desempeño por asesor
-    lineas.append(formatear_resultado_r5(resultado_r5))
+    lineas.append("## Desempeño por Asesor (WhatsApp / Redes Sociales)")
+    lineas.append("")
+    if resultado_r5.get("asesores"):
+        lineas.append("| Asesor | WhatsApp | Llamadas | Tiempo Ocupación | AHT | Total |")
+        lineas.append("|--------|----------|----------|------------------|-----|-------|")
+        for asesor in resultado_r5["asesores"]:
+            lineas.append(
+                f"| {asesor.get('asesor', 'N/D')} | {asesor.get('whatsapp', 'N/D')} | {asesor.get('llamadas', 'N/D')} | {asesor.get('tiempo_ocupacion', 'N/D')} | {asesor.get('aht', 'N/D')} | {asesor.get('total', 'N/D')} |"
+            )
+    else:
+        lineas.append("*No se encontraron datos de asesores.*")
     lineas.append("")
     lineas.append("---")
     lineas.append("")
@@ -122,16 +149,13 @@ def exportar_informe():
     return response
 
 
-@export_bp.route("/api/informe", methods=["GET"])
-def api_informe():
-    """Devuelve el informe ejecutivo en formato JSON.
-
-    Útil para el agente de IA o para consumo por frontend.
-    """
+@export_bp.route("/api/informe-interno", methods=["GET"])
+def api_informe_interno():
+    """Devuelve el informe ejecutivo en formato JSON."""
     ruta_insumos = _obtener_ruta_insumos()
 
-    resultado_r1 = calcular_metricas_por_canal(ruta_insumos)
-    resultado_r2 = calcular_correos_por_buzon(ruta_insumos)
+    resultado_r1 = metricas_globales_por_canal()
+    resultado_r2 = correos_por_buzon()
     resultado_r3 = calcular_matriz_asesor_buzon(ruta_insumos)
     resultado_r4 = calcular_whatsapp_por_subcanal(ruta_insumos)
     resultado_r5 = calcular_desempeño_asesor_whatsapp(ruta_insumos)

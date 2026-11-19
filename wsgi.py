@@ -1,11 +1,11 @@
-"""Punto de entrada para despliegue (WSGI).
-
-Importa create_app y expone la aplicación como `app`.
+"""
+Punto de entrada WSGI para despliegue.
+Importa la factory create_app y expone la aplicación.
 """
 
 from app import create_app
 
-app = create_app()
+application = create_app()
 
 if __name__ == "__main__":
-    app.run()
+    application.run(debug=True)

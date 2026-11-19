@@ -1,23 +1,16 @@
-"""Rutas principales de la aplicación.
+"""Rutas adicionales de la aplicación.
 
 Endpoints:
-  - GET /   : pantalla de inicio
   - GET /health : estado de la aplicación (JSON)
 """
 
-from flask import jsonify, render_template
+from flask import jsonify
 
 from app.controllers import main_bp
 
 
-@main_bp.route("/")
-def inicio():
-    """Pantalla de inicio de la app."""
-    return render_template("inicio.html")
-
-
 @main_bp.route("/health")
-def health():
+def health_check():
     """Endpoint de salud de la aplicación."""
     return jsonify(
         {

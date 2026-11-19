@@ -1,141 +1,106 @@
-"""Lectura de archivos de insumos (solo lectura).
-
-Lee cada archivo Excel de la carpeta `insumos/` y devuelve, por hoja:
-- nombre de la hoja
-- columnas (encabezados de la primera fila)
-- número de filas de datos (excluyendo el encabezado)
-
-Nunca escribe nada dentro de `insumos/`.
+"""
+Servicio de lectura de insumos.
+Lee los archivos Excel de la carpeta insumos/ y devuelve metadatos
+(columnas, número de filas, muestra de datos) sin modificar nada.
+Regla R6: fidelidad absoluta, solo lectura, nada se inventa.
 """
 
-from __future__ import annotations
-
-import os
-from typing import Any
-
-import openpyxl
+from pathlib import Path
+from openpyxl import load_workbook
 
 
-def _fila_tiene_contenido(fila: tuple[Any, ...]) -> bool:
-    """Devuelve True si la fila tiene al menos una celda no vacía."""
-    return any(c is not None and str(c).strip() != "" for c in fila)
+INSUMOS_DIR = Path(__file__).resolve().parent.parent.parent / "insumos"
 
 
-def _primer_encabezado_valido(ws) -> tuple[list[str], int]:
-    """Busca la primera fila no vacía de la hoja y la devuelve como encabezado.
+def listar_archivos_insumos():
+    """Devuelve la lista de archivos .xlsx en la carpeta insumos/."""
+    if not INSUMOS_DIR.exists():
+        return []
+    return sorted(INSUMOS_DIR.glob("*.xlsx"))
 
-    Devuelve (lista_de_columnas, indice_fila_encabezado_base_1).
-    Si la hoja está completamente vacía, devuelve ([], 0).
+
+def leer_excel(ruta_archivo):
     """
-    for indice, fila in enumerate(ws.iter_rows(values_only=True), start=1):
-        if _fila_tiene_contenido(fila):
-            columnas = [str(c) if c is not None else "" for c in fila]
-            return columnas, indice
-    return [], 0
-
-
-def leer_archivo_excel(ruta_archivo: str) -> list[dict[str, Any]]:
-    """Lee un archivo Excel y devuelve información de cada hoja.
-
-    Args:
-        ruta_archivo: ruta absoluta o relativa al archivo .xlsx
-
-    Returns:
-        Lista de diccionarios, uno por hoja, con claves:
-        - hoja: nombre de la hoja
-        - columnas: lista de nombres de columna (encabezados detectados en la
-          primera fila con contenido)
-        - filas_datos: número de filas con contenido, excluyendo el encabezado
-        - filas_total: número total de filas de la hoja
-        - fila_encabezado: número de fila (base 1) donde se detectó el encabezado
+    Lee un archivo Excel y devuelve información por hoja:
+    - nombre de hoja
+    - max_row, max_column
+    - filas de datos detectadas (después del encabezado)
+    - encabezados detectados
+    - muestra de las primeras 2 filas de datos
+    Usa read_only=True para leer archivos grandes de forma eficiente.
     """
-    resultado: list[dict[str, Any]] = []
+    wb = load_workbook(str(ruta_archivo), data_only=True, read_only=True)
+    resultado = {
+        "archivo": ruta_archivo.name,
+        "hojas": []
+    }
+    for sheet_name in wb.sheetnames:
+        ws = wb[sheet_name]
+        hoja_info = {
+            "nombre": sheet_name,
+            "max_row": ws.max_row,
+            "max_column": ws.max_column,
+            "encabezados": [],
+            "filas_datos": 0,
+            "muestra": []
+        }
 
-    wb = openpyxl.load_workbook(ruta_archivo, data_only=True, read_only=True)
+        # Detectar fila de encabezados (primera fila con >= 2 celdas no vacías)
+        # En modo read_only, iteramos sobre las primeras 10 filas
+        fila_encabezados = None
+        encabezados = []
+        for row_idx, row in enumerate(ws.iter_rows(min_row=1, max_row=10, values_only=True), start=1):
+            celdas_no_vacias = [(i, v) for i, v in enumerate(row)
+                                if v is not None and str(v).strip() != ""]
+            if len(celdas_no_vacias) >= 2:
+                fila_encabezados = row_idx
+                encabezados = [(i, str(v)) for i, v in celdas_no_vacias]
+                break
 
-    for nombre_hoja in wb.sheetnames:
-        ws = wb[nombre_hoja]
+        if fila_encabezados:
+            hoja_info["encabezados"] = encabezados
+            hoja_info["fila_encabezados"] = fila_encabezados
 
-        columnas, fila_encabezado = _primer_encabezado_valido(ws)
+            # Contar filas de datos después del encabezado (límite para evitar lentitud)
+            filas_datos = 0
+            muestra = []
+            for row in ws.iter_rows(min_row=fila_encabezados + 1, values_only=True):
+                if any(cell is not None and str(cell).strip() != "" for cell in row):
+                    filas_datos += 1
+                    if len(muestra) < 2:
+                        muestra.append([str(v) if v is not None else "" for v in row])
+            hoja_info["filas_datos"] = filas_datos
+            hoja_info["muestra"] = muestra
 
-        if fila_encabezado == 0:
-            resultado.append(
-                {
-                    "hoja": nombre_hoja,
-                    "columnas": [],
-                    "filas_datos": 0,
-                    "filas_total": ws.max_row,
-                    "fila_encabezado": 0,
-                }
-            )
-            continue
-
-        n_datos = 0
-        filas = ws.iter_rows(values_only=True, min_row=fila_encabezado + 1)
-        for fila in filas:
-            if _fila_tiene_contenido(fila):
-                n_datos += 1
-
-        resultado.append(
-            {
-                "hoja": nombre_hoja,
-                "columnas": columnas,
-                "filas_datos": n_datos,
-                "filas_total": ws.max_row,
-                "fila_encabezado": fila_encabezado,
-            }
-        )
+        resultado["hojas"].append(hoja_info)
 
     wb.close()
     return resultado
 
 
-def leer_insumos(ruta_carpeta_insumos: str) -> dict[str, list[dict[str, Any]]]:
-    """Lee todos los archivos Excel de la carpeta de insumos.
+def leer_todos_los_insumos():
+    """Lee todos los archivos Excel de insumos/ y devuelve metadatos combinados."""
+    archivos = listar_archivos_insumos()
+    resultado = []
+    for archivo in archivos:
+        resultado.append(leer_excel(archivo))
+    return resultado
 
-    Args:
-        ruta_carpeta_insumos: ruta a la carpeta `insumos/`
 
-    Returns:
-        Diccionario clave = nombre de archivo, valor = lista de hojas
-        (cada hoja con columnas y filas de datos).
+def _fila_tiene_contenido(fila):
+    """Devuelve True si la fila tiene al menos una celda no vacía."""
+    return any(cell is not None and str(cell).strip() != "" for cell in fila)
+
+
+def _primer_encabezado_valido(ws):
     """
-    insumos: dict[str, list[dict[str, Any]]] = {}
-
-    if not os.path.isdir(ruta_carpeta_insumos):
-        return insumos
-
-    for nombre_archivo in sorted(os.listdir(ruta_carpeta_insumos)):
-        if not nombre_archivo.lower().endswith((".xlsx", ".xls")):
-            continue
-
-        ruta_completa = os.path.join(ruta_carpeta_insumos, nombre_archivo)
-        insumos[nombre_archivo] = leer_archivo_excel(ruta_completa)
-
-    return insumos
-
-
-def imprimir_reporte(insumos: dict[str, list[dict[str, Any]]]) -> None:
-    """Imprime un reporte legible de columnas y filas por archivo y hoja."""
-    for nombre_archivo, hojas in insumos.items():
-        print(f"===== {nombre_archivo} =====")
-        for hoja in hojas:
-            columnas_str = ", ".join(c for c in hoja["columnas"] if c) if hoja["columnas"] else "(sin encabezados)"
-            print(
-                f"  Hoja '{hoja['hoja']}': "
-                f"{len(hoja['columnas'])} columnas, "
-                f"{hoja['filas_datos']} filas de datos, "
-                f"encabezado en fila {hoja['fila_encabezado']}"
-            )
-            if hoja["columnas"]:
-                print(f"    Columnas: {columnas_str[:200]}{'...' if len(columnas_str) > 200 else ''}")
-        print()
-
-
-if __name__ == "__main__":
-    # Ruta relativa a la carpeta insumos desde la raíz del proyecto
-    ruta_insumos = os.path.join(os.path.dirname(__file__), "..", "..", "insumos")
-    ruta_insumos = os.path.abspath(ruta_insumos)
-
-    datos = leer_insumos(ruta_insumos)
-    imprimir_reporte(datos)
+    Encuentra la primera fila que parece encabezado de datos
+    (tiene al menos 3 celdas no vacías con texto).
+    Devuelve (lista_de_encabezados, numero_de_fila) o ([], 0) si no se encuentra.
+    """
+    for row_idx in range(1, min(ws.max_row + 1, 20)):
+        fila = [c.value for c in ws[row_idx]]
+        celdas_no_vacias = [str(v).strip() for v in fila if v is not None and str(v).strip() != ""]
+        if len(celdas_no_vacias) >= 3:
+            return celdas_no_vacias, row_idx
+    return [], 0
