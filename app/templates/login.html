@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+
+{% block title %}Login - Análisis Operativo{% endblock %}
+
+{% block content %}
+<main>
+    <div style="max-width: 400px; margin: 0 auto;">
+        <h2 style="color: #38bdf8; margin-bottom: 1.5rem;">🔐 Iniciar sesión</h2>
+
+        {% if error %}
+        <div class="alert alert-warning" style="margin-bottom: 1rem;">
+            Usuario o contraseña incorrectos
+        </div>
+        {% endif %}
+
+        <form method="POST" action="/login">
+            <div style="margin-bottom: 1rem;">
+                <label style="display: block; margin-bottom: 0.5rem; color: #f8fafc;">Usuario</label>
+                <input type="text" name="usuario" required
+                       style="width: 100%; padding: 0.5rem; background: #0f172a; border: 1px solid #334155; color: #f8fafc; border-radius: 4px;"
+                       placeholder="Usuario administrador">
+            </div>
+            <div style="margin-bottom: 1.5rem;">
+                <label style="display: block; margin-bottom: 0.5rem; color: #f8fafc;">Contraseña</label>
+                <input type="password" name="clave" required
+                       style="width: 100%; padding: 0.5rem; background: #0f172a; border: 1px solid #334155; color: #f8fafc; border-radius: 4px;"
+                       placeholder="Contraseña">
+            </div>
+            <button type="submit" class="btn" style="width: 100%;">Entrar</button>
+        </form>
+    </div>
+</main>
+{% endblock %}

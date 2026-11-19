@@ -1,9 +1,12 @@
 """
 Controladores de la aplicación.
 Define el blueprint principal con las rutas de la app.
+Incluye control de acceso por login (usuario administrador por variables de entorno).
 """
 
-from flask import Blueprint, render_template, request, jsonify
+import hmac
+import os
+from flask import Blueprint, render_template, request, jsonify, redirect, url_for, session, flash
 
 from app.services.lectura_insumos import leer_todos_los_insumos, INSUMOS_DIR
 from app.services.regla_r1_metricas_canal import metricas_globales_por_canal
@@ -16,19 +19,78 @@ from app.services.agente_ia import procesar_con_agente_ia
 main_bp = Blueprint("main", __name__)
 
 
+def login_requerido(func):
+    """Decorador que exige haber iniciado sesión para acceder a una ruta.
+    Si no hay sesión activa, redirige a /login."""
+    from functools import wraps
+
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        if not session.get("usuario_autenticado"):
+            return redirect(url_for("main.login"))
+        return func(*args, **kwargs)
+    return wrapper
+
+
+# ==================== RUTAS DE AUTENTICACIÓN ====================
+
+@main_bp.route("/login", methods=["GET"])
+def login():
+    """Pantalla de login: formulario con usuario y contraseña."""
+    if session.get("usuario_autenticado"):
+        return redirect(url_for("main.inicio"))
+    error = request.args.get("error")
+    return render_template("login.html", error=error)
+
+
+@main_bp.route("/login", methods=["POST"])
+def login_post():
+    """Procesa el login: compara con APP_USUARIO y APP_CLAVE usando hmac.compare_digest."""
+    usuario = request.form.get("usuario", "")
+    clave = request.form.get("clave", "")
+
+    app_usuario = os.environ.get("APP_USUARIO", "")
+    app_clave = os.environ.get("APP_CLAVE", "")
+
+    # Usar hmac.compare_digest para comparación segura contra timing attacks
+    usuario_correcto = hmac.compare_digest(usuario, app_usuario or "")
+    clave_correcta = hmac.compare_digest(clave, app_clave or "")
+
+    if usuario_correcto and clave_correcta:
+        session.permanent = True
+        session["usuario_autenticado"] = True
+        session["usuario_nombre"] = usuario
+        return redirect(url_for("main.inicio"))
+    else:
+        # No revelar cuál de los dos falló
+        return redirect(url_for("main.login", error="1"))
+
+
+@main_bp.route("/salir")
+def salir():
+    """Borra la sesión y redirige a /login."""
+    session.clear()
+    return redirect(url_for("main.login"))
+
+
+# ==================== RUTAS PROTEGIDAS ====================
+
 @main_bp.route("/")
+@login_requerido
 def inicio():
     """Pantalla de inicio: formulario para cargar/seleccionar insumos."""
     return render_template("inicio.html")
 
 
 @main_bp.route("/resultados")
+@login_requerido
 def resultados():
     """Pantalla de resultados: tablero con contadores y tablas."""
     return render_template("resultados.html")
 
 
 @main_bp.route("/detalle")
+@login_requerido
 def detalle():
     """Pantalla de detalle por registro/asesor."""
     return render_template("detalle.html")
@@ -41,6 +103,7 @@ def health():
 
 
 @main_bp.route("/api/insumos")
+@login_requerido
 def insumos():
     """Devuelve metadatos de todos los archivos Excel en insumos/ (solo lectura)."""
     try:
@@ -51,6 +114,7 @@ def insumos():
 
 
 @main_bp.route("/api/regla-r1")
+@login_requerido
 def regla_r1():
     """Ejecuta la regla de negocio R1: métricas globales por canal."""
     try:
@@ -61,6 +125,7 @@ def regla_r1():
 
 
 @main_bp.route("/api/regla-r2")
+@login_requerido
 def regla_r2():
     """Ejecuta la regla de negocio R2: desglose de correos por buzón."""
     try:
@@ -71,6 +136,7 @@ def regla_r2():
 
 
 @main_bp.route("/api/regla-r3")
+@login_requerido
 def regla_r3():
     """Ejecuta la regla de negocio R3: matriz Asesor vs Buzón."""
     try:
@@ -81,6 +147,7 @@ def regla_r3():
 
 
 @main_bp.route("/api/regla-r4")
+@login_requerido
 def regla_r4():
     """Ejecuta la regla de negocio R4: WhatsApp por subcanal."""
     try:
@@ -91,6 +158,7 @@ def regla_r4():
 
 
 @main_bp.route("/api/regla-r5")
+@login_requerido
 def regla_r5():
     """Ejecuta la regla de negocio R5: desempeño por asesor WhatsApp."""
     try:
@@ -101,12 +169,12 @@ def regla_r5():
 
 
 @main_bp.route("/api/agente-ia", methods=["POST"])
+@login_requerido
 def agente_ia():
     """Ejecuta el agente de IA con los datos de las reglas R1-R5."""
     try:
         from flask import request
         entrada = request.get_json(force=True) or {}
-        # Construir el contrato de entrada a partir de las reglas
         entrada_completa = {
             "canales": entrada.get("canales", []),
             "buzones": entrada.get("buzones", []),
@@ -125,6 +193,7 @@ def agente_ia():
 
 
 @main_bp.route("/api/descargar")
+@login_requerido
 def descargar():
     """Endpoint para descargar el informe (Markdown)."""
     from flask import make_response
@@ -136,6 +205,7 @@ def descargar():
 
 
 @main_bp.route("/api/informe")
+@login_requerido
 def informe_consolidado():
     """Endpoint consolidado que devuelve todas las reglas de negocio (R1-R5) en una sola respuesta."""
     try:

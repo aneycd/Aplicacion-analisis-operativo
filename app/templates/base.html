@@ -176,6 +176,11 @@
             <a href="/">Inicio</a>
             <a href="/resultados">Resultados</a>
             <a href="/detalle">Detalle</a>
+            {% if session.usuario_autenticado %}
+            <a href="/salir" class="btn btn-secondary" style="float: right; margin-left: 1rem;">Salir</a>
+            {% else %}
+            <a href="/login" class="btn btn-secondary" style="float: right;">Entrar</a>
+            {% endif %}
         </div>
     </nav>
 
